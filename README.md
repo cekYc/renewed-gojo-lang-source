@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔮 Gojo Lang
+# Gojo Lang
 
 **Güvenmediğin Kodu Derleme.**
 *(Don't compile what you don't trust.)*

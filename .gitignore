@@ -1,0 +1,23 @@
+
+# Rust build outputs
+/target
+/debug/
+/release/
+
+# IDE/editor files
+/.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*.bak
+*.tmp
+*.log
+*.d
+*.rs.bk
+
+# Test outputs
+*.test
+*.out
+
+# Misc
+node_modules/

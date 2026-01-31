@@ -1,0 +1,26 @@
+deterministic fn fib(n: i64) -> i64 {
+    if n <= 1 {
+        return n
+    } 
+    let a = fib(n - 1)
+    let b = fib(n - 2)   
+    return a + b
+}
+
+nondeterministic fn main(girdi: Untrusted) -> Void {
+    validate girdi {
+        success: {
+            scope Benchmark {
+                let n = 40
+                spawn DB.log("Gojo: fib(" + n + ") hesaplaniyor...")
+
+                let start = call Util.now()               
+                let sonuc = fib(n)             
+                let end = call Util.now()           
+                
+                spawn DB.log("Sonuc: " + sonuc)
+                spawn DB.log("Gecen Sure: " + (end - start) + " ms")
+            }
+        }
+    }
+}

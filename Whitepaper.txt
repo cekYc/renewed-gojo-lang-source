@@ -1,0 +1,115 @@
+Gojo Lang — Whitepaper v1.0
+A Proof-Oriented Language for Real-World Distributed Systems
+
+Versiyon: 1.0 Tarih: 19 Ocak 2026 Durum: Prototip Tamamlandı (Compiler v0.3)
+
+0. Abstract (Özet)
+
+Modern yazılım mühendisliği, özellikle backend sistemlerinde bir krizin eşiğindedir. Kullandığımız diller (Java, Go, Python), kodu hala tek bir makinede çalışan izole algoritmalar bütünü olarak modellemektedir. Oysa gerçek dünya; ağ gecikmeleri, kısmi hatalar (partial failures) ve kaynak kısıtlamaları ile doludur.
+Mevcut dillerde dağıtık sistem güvenliği, "kıdemli mühendislerin disiplinine" ve harici kütüphanelere bırakılmıştır. Bu yaklaşım, üretim ortamında (production) öngörülemez hatalara, zombie process'lere ve veri tutarsızlıklarına yol açmaktadır.
+
+Gojo Lang, bu paradigmayı reddeder.
+
+Gojo, dağıtık sistem güvenliğini geliştiricinin inisiyatifinden alıp, Derleyicinin (Compiler) matematiksel garantisine veren "Kanıt Odaklı" (Proof-Oriented) bir dildir. Temel tezi şudur: "Bir sistemin güvenliği, çalışma zamanının (runtime) zekasına değil, tasarım zamanının (design-time) kısıtlamalarına dayanmalıdır."
+
+1. Design Philosophy (Tasarım Felsefesi)
+Gojo'nun mimarisi dört temel, tartışmaya kapalı prensip üzerine inşa edilmiştir.
+
+1.1. The Runtime is Stupid (Runtime Aptaldır)
+Gojo Runtime'ı karar vermez, sadece uygular. Retry sayıları, timeout süreleri veya concurrency modelleri çalışma zamanında "tahmin edilmez" veya "optimize edilmez". Zeka tamamen derleyicidedir. Bu sayede sistem yük altındayken sürpriz (latency spike) yapmaz.
+
+1.2. Code is System Definition (Kod Sistem Tanımıdır)
+Kod, sadece iş mantığını (algoritmayı) değil, o kodun nerede ve nasıl çalışacağını da ifade eder. Altyapı (Infrastructure) konfigürasyon dosyalarına (YAML) hapsedilemez. Memory limitleri, replikasyon stratejileri ve servis çağrıları dilin "First-Class" vatandaşlarıdır.
+
+1.3. Infrastructure is Semantics (Altyapı Semantiktir)
+Bir ağ çağrısı (remote call) ile bellek içi çağrı (local call) sözdizimsel olarak asla aynı olamaz. Ağın güvenilmezliği, dilin gramerinde (syntax) zorunlu alanlarla (timeout, retry) kabul edilir.
+
+1.4. Fail Fast & Safety First
+Belirsiz bir durumda çalışmaya devam etmektense, kontrollü şekilde çökmek yeğdir. Null yoktur, yakalanmamış Exception yoktur. Kirli veri (Untrusted) sisteme giremez.
+
+2. Core Semantics & Type System
+Gojo, hataları kod yazılırken engellemek için üç katmanlı bir güvenlik modeli kullanır.
+
+2.1. Determinism Enforcement (Renkli Fonksiyonlar)
+Sistem iki tür fonksiyona ayrılır:
+
+deterministic fn: Saf mantık. I/O yapamaz, global state okuyamaz, random üretemez. %100 test edilebilir.
+
+nondeterministic fn: Dış dünya ile temas eden, "kirli" fonksiyonlar.
+
+Kural: Deterministik bir fonksiyon, asla Nondeterministic bir fonksiyonu çağıramaz. Bu ayrım derleyici (Pass 1) tarafından denetlenir.
+
+2.2. Taint Analysis (Kirli Veri Takibi)
+Dış dünyadan (HTTP, DB) gelen her veri varsayılan olarak Untrusted<T> tipindedir. Kural: Untrusted veri, validate { ... } bloğundan geçmeden asla iş mantığına (Business Logic) sokulamaz. Bu, Injection ve Validation hatalarını tip seviyesinde imkansız kılar.
+
+2.3. Structured Concurrency (Scope & Spawn)
+Thread veya Promise yoktur. Task vardır. Kural: Bir task (spawn), sadece bir yaşam alanı (scope) içinde başlatılabilir. Scope bloğu bittiğinde, içerideki tüm task'lar tamamlanmış veya iptal edilmiş olmak zorundadır. Yetim (Orphan) task oluşumu fiziksel olarak engellenmiştir.
+
+3. The Infrastructure Contract
+Gojo'da altyapı çağrıları, derleyicinin en sıkı denetlediği alandır.
+
+3.1. Mandatory Timeouts
+Ağ çağrıları (call Service.method) yapılırken timeout parametresi opsiyonel değildir. Yazılımcı, "Bu işlem ne kadar sürebilir?" sorusuna cevap vermeden kodu derleyemez.
+
+3.2. Explicit Failure Handling
+Hata fırlatmak (throw exception) yoktur. Tüm altyapı çağrıları Result<T, E> döner ve match ile (exhaustive) tüm durumların karşılanması zorunludur.
+
+4. Compiler Architecture (The Enforcer)
+Gojo Compiler (v0.3), kodu makine diline çevirmeden önce 3 Kritik Analizden (Pass) geçirir.
+
+Pass 1: Determinism Police: Saf fonksiyonların içine sızmaya çalışan I/O işlemlerini veya spawn komutlarını yakalar.
+
+Pass 2: Taint Police: Validasyon yapılmamış Untrusted verinin kullanımını engeller.
+
+Pass 3: Scope Police: scope bloğu dışında spawn yapılmasını veya referansların scope dışına sızmasını (escape analysis) engeller.
+
+Bu analizler "Warning" üretmez, derlemeyi reddeder.
+
+5. Hello Reality: Örnek Kod
+Aşağıdaki kod, Gojo'nun tüm prensiplerinin tek bir dosyada vücut bulmuş halidir. Bu kodda Junior bir yazılımcının mimari hata yapması imkansızdır.
+
+Rust
+nondeterministic fn handle_payment(raw: Untrusted) -> Result<Receipt, Error> {
+    
+    // [Safety] Kirli veri validate edilmeden kullanılamaz.
+    let req = validate raw {
+        schema: PaymentSchema,
+        on_fail: return Error.InvalidInput
+    }
+
+    // [Concurrency] Thread'ler bu scope'a hapsedilmiştir.
+    // Scope bittiğinde hepsi temizlenir.
+    scope TxScope {
+        let user_task = spawn DB.users.get(req.user_id)
+        
+        // [Infra] Timeout zorunludur. Unutulursa derlenmez.
+        let fraud_check = spawn call FraudAPI.check(req) {
+            timeout: 200ms,
+            retry: 3,
+            fallback: Risk.High
+        }
+
+        await all
+    }
+
+    // [Determinism] Burası saf mantıktır. IO yasaktır.
+    let final_amount = calculate_fees(req.amount)
+
+    // [Transaction] Commit/Rollback garantisi scope ile sağlanır.
+    call DB.transaction { timeout: 2s } run |tx| {
+        tx.save(final_amount)
+    }
+}
+6. Sonuç ve Gelecek
+Gojo Lang, bir programlama dili olmanın ötesinde, "Dağıtık Sistemler İçin Bir Anayasadır".
+
+Mevcut diller "Doğru yazarsan çalışırım" derken, Gojo "Yanlış yazamazsın" der. Prototip derleyicisi (v0.3) ile bu kuralların statik analiz seviyesinde uygulanabileceği kanıtlanmıştır.
+
+Yol Haritası
+v0.1 - v0.3: Semantik tasarım, AST ve Statik Analiz (Tamamlandı).
+
+v0.4: Rust Codegen (Backend) entegrasyonu.
+
+v1.0: Standart Kütüphane (HTTP, DB) ve Production-Ready Release.
+
+Gojo Lang Team 19 Ocak 2026

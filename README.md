@@ -4,7 +4,7 @@
 
 ### The language that refuses to compile code it doesn't trust.
 
-[![Version](https://img.shields.io/badge/v0.5.0-orange?style=flat-square&label=version)]()
+[![Version](https://img.shields.io/badge/v0.6.0-orange?style=flat-square&label=version)]()
 [![License](https://img.shields.io/badge/CC_BY--NC--SA_4.0-red?style=flat-square&label=license)]()
 [![Written In](https://img.shields.io/badge/Rust-black?style=flat-square&logo=rust)]()
 [![Platform](https://img.shields.io/badge/Windows_%7C_Linux_%7C_macOS-7c3aed?style=flat-square)]()
@@ -17,11 +17,12 @@
 
 ---
 
-### What’s New in v0.5.0?
-- **Project workflow**: `zet new`, `zet run`, and `zet build` cover the path from a new project to a native executable.
-- **Project manifests**: `zet.toml` defines the package name, version, and entry source.
-- **Isolated builds**: Generated Rust, Cargo targets, and binaries stay inside each project's `.zet/` directory.
-- **Backward compatible CLI**: Existing `zet file.zt` programs continue to work.
+### What’s New in v0.6.0?
+- **Git package manager**: `zet add`, `remove`, `install`, and `update` manage project dependencies without a central registry.
+- **Reproducible resolution**: `zet.lock` pins each direct and transitive package to an immutable Git commit and SHA-256 content checksum.
+- **SemVer tags**: Exact versions and ranges resolve against `vX.Y.Z` or `X.Y.Z` repository tags.
+- **Shared cache, local checkout**: Git mirrors are reused globally while each project keeps its resolved sources in `.zet/packages/`.
+- **Package imports**: Package entry points and modules work with the existing `import` syntax.
 
 ### Language features from v0.4
 - **Backend First-Class Features**: Automatic HTTP Routing (`@get`, `@post`), Zero-Trust SQLite DB integration.
@@ -100,7 +101,7 @@ This isn't a linter warning. It's not a "best practice." **The compiler won't pr
 
 ## 🚀 Quick Start
 
-> **Requirements:** Windows, Linux, or macOS and a [Rust stable toolchain](https://rustup.rs/) on PATH.
+> **Requirements:** Windows, Linux, or macOS and a [Rust stable toolchain](https://rustup.rs/) on PATH. Package commands also require [Git](https://git-scm.com/) on PATH.
 
 ### Option A — Download the installer
 1. Download the package for your platform from [Zet Setup Releases](https://github.com/cekYc/zet-setup/releases).
@@ -124,6 +125,23 @@ zet build
 ```
 
 `zet new` creates `zet.toml` and `src/main.zt`. `zet build` writes the native executable to `.zet/bin/`. You can still run a standalone file with `zet hello.zt`.
+
+### Add and use a package
+
+```bash
+zet add owner/repository@^1.0
+zet install
+zet update repository
+zet remove repository
+```
+
+The dependency name comes from the package repository's `zet.toml`. Import it by that name:
+
+```zet
+import repository
+```
+
+Commit `zet.toml` and `zet.lock`; do not commit `.zet/`. See [the package manager guide](DOCS.md#11-v06-git-paket-yöneticisi) for repository requirements, SemVer rules, cache paths, and transitive dependencies.
 
 ---
 
@@ -253,6 +271,7 @@ Release builds use Rust’s optimized native-code pipeline with LTO, a single co
 src/
 ├── main.rs              # CLI entry & pipeline orchestrator
 ├── project.rs           # zet.toml discovery & isolated .zet workspaces
+├── package.rs           # Git resolution, SemVer, cache, and zet.lock
 ├── parser.rs            # Nom-based recursive descent parser
 ├── ast.rs               # AST node definitions
 ├── codegen.rs           # Rust code generation (preamble + per-function)
@@ -279,7 +298,8 @@ src/
 - [x] Windows, Linux, and macOS packages
 - [x] LSP diagnostics prototype
 - [x] Project manifests and `zet new/run/build` workflow
-- [ ] Package manager
+- [x] Git package manager with SemVer and reproducible locks
+- [ ] Central package registry and publishing workflow
 
 ---
 

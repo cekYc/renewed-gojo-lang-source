@@ -2,6 +2,7 @@ mod analysis;
 mod ast;
 mod codegen;
 mod lsp;
+mod package;
 mod parser;
 mod project;
 
@@ -20,6 +21,7 @@ fn resolve_imports(
     base_path: &Path,
     toplevels: Vec<TopLevel>,
     loaded: &mut HashMap<PathBuf, Vec<TopLevel>>,
+    package_imports: &HashMap<String, package::PackageImport>,
 ) -> Result<Vec<TopLevel>, String> {
     let mut resolved = Vec::new();
     for item in toplevels {
@@ -29,6 +31,21 @@ fn resolve_imports(
                 file_path.push(part);
             }
             file_path.set_extension("zt");
+
+            if !file_path.is_file() {
+                if let Some(package) = path.first().and_then(|name| package_imports.get(name)) {
+                    file_path = if path.len() == 1 {
+                        package.entry.clone()
+                    } else {
+                        let mut package_file = package.source_root.clone();
+                        for part in &path[1..] {
+                            package_file.push(part);
+                        }
+                        package_file.set_extension("zt");
+                        package_file
+                    };
+                }
+            }
 
             let canonical = file_path.canonicalize().unwrap_or(file_path.clone());
             if loaded.contains_key(&canonical) {
@@ -44,7 +61,7 @@ fn resolve_imports(
 
             loaded.insert(canonical.clone(), Vec::new());
             let parent_dir = file_path.parent().unwrap_or(Path::new(""));
-            let resolved_items = resolve_imports(parent_dir, items, loaded)?;
+            let resolved_items = resolve_imports(parent_dir, items, loaded, package_imports)?;
             loaded.insert(canonical, resolved_items.clone());
 
             let module_name = path
@@ -121,6 +138,10 @@ fn print_usage() {
     println!("  zet new <ad>              Yeni bir Zet projesi olustur");
     println!("  zet run [dosya.zt]        Projeyi veya dosyayi calistir");
     println!("  zet build [dosya.zt]      Yerel calistirilabilir dosya uret");
+    println!("  zet add <sahip/depo>      Git paketini ekle ve kur");
+    println!("  zet remove <paket>        Bagimliligi kaldir");
+    println!("  zet install               zet.lock paketlerini kur");
+    println!("  zet update [paket]        Paketleri guncelle");
     println!("  zet <dosya.zt> [arg...]   Tek dosyayi derle ve calistir");
     println!("  zet --lsp                 Dil sunucusunu baslat");
     println!("  zet --version             Surum bilgisini goster");
@@ -162,6 +183,10 @@ fn main() {
             let source = parse_build_args(&args[2..]);
             execute(source.as_deref(), BuildMode::Build, &[]);
         }
+        "add" => package_command(&args[2..], PackageCommand::Add),
+        "remove" => package_command(&args[2..], PackageCommand::Remove),
+        "install" => package_command(&args[2..], PackageCommand::Install),
+        "update" => package_command(&args[2..], PackageCommand::Update),
         _ => execute(Some(Path::new(&args[1])), BuildMode::Run, &args[2..]),
     }
 }
@@ -212,9 +237,54 @@ enum BuildMode {
     Build,
 }
 
+#[derive(Clone, Copy)]
+enum PackageCommand {
+    Add,
+    Remove,
+    Install,
+    Update,
+}
+
+fn package_command(args: &[String], command: PackageCommand) {
+    let valid = match command {
+        PackageCommand::Add | PackageCommand::Remove => args.len() == 1,
+        PackageCommand::Install => args.is_empty(),
+        PackageCommand::Update => args.len() <= 1,
+    };
+    if !valid {
+        let usage = match command {
+            PackageCommand::Add => "zet add <sahip/depo[@surum]>",
+            PackageCommand::Remove => "zet remove <paket>",
+            PackageCommand::Install => "zet install",
+            PackageCommand::Update => "zet update [paket]",
+        };
+        eprintln!("Kullanim: {usage}");
+        exit(2);
+    }
+
+    let project = project::resolve_manifest_project().unwrap_or_else(|error| {
+        eprintln!("[ZET HATA] {error}");
+        exit(1);
+    });
+    let result = match command {
+        PackageCommand::Add => package::add(&project, &args[0]),
+        PackageCommand::Remove => package::remove(&project, &args[0]),
+        PackageCommand::Install => package::install(&project),
+        PackageCommand::Update => package::update(&project, args.first().map(String::as_str)),
+    };
+    if let Err(error) = result {
+        eprintln!("[ZET PAKET HATASI] {error}");
+        exit(1);
+    }
+}
+
 fn execute(source: Option<&Path>, mode: BuildMode, user_args: &[String]) {
     let project = project::resolve_project(source).unwrap_or_else(|error| {
         eprintln!("[ZET HATA] {error}");
+        exit(1);
+    });
+    let package_imports = package::import_map(&project).unwrap_or_else(|error| {
+        eprintln!("[ZET PAKET HATASI] {error}");
         exit(1);
     });
     let filename = &project.source;
@@ -237,8 +307,8 @@ fn execute(source: Option<&Path>, mode: BuildMode, user_args: &[String]) {
     }
 
     let mut loaded = HashMap::new();
-    let resolved_toplevels =
-        resolve_imports(base_path, toplevels, &mut loaded).unwrap_or_else(|error| {
+    let resolved_toplevels = resolve_imports(base_path, toplevels, &mut loaded, &package_imports)
+        .unwrap_or_else(|error| {
             eprintln!("{error}");
             exit(1);
         });

@@ -7,6 +7,7 @@
 # Independent repositories kept beside the compiler source
 /zet-lang/
 /zet-setup/
+/package_smoke/
 
 # IDE/editor files
 /.vscode/

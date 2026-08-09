@@ -1,4 +1,4 @@
-# 📘 Zet Lang Resmi Dökümantasyonu (v0.5)
+# 📘 Zet Lang Resmi Dökümantasyonu (v0.6)
 
 Zet Lang'e hoş geldiniz. Bu dökümantasyon, dilin sözdizimini (syntax), temel konseptlerini, güvenlik modelini ve standart kütüphanesini içerir.
 
@@ -16,6 +16,7 @@ Zet Lang'e hoş geldiniz. Bu dökümantasyon, dilin sözdizimini (syntax), temel
 8. [v0.3 Yeni Özellikler](#8-v03-yeni-özellikler)
 9. [v0.4 Yeni Özellikler (Hata Yönetimi ve LSP)](#9-v04-yeni-özellikler-hata-yönetimi-ve-lsp)
 10. [v0.5 Proje Sistemi ve CLI](#10-v05-proje-sistemi-ve-cli)
+11. [v0.6 Git Paket Yöneticisi](#11-v06-git-paket-yöneticisi)
 
 ---
 
@@ -627,3 +628,122 @@ entry = "src/main.zt"
 ```
 
 Ardından `zet run` ve `zet build` komutları kullanılabilir. Windows, Linux ve macOS başlatıcıları çalışma klasörünü değiştirmeden komutları derleyiciye ilettiği için proje keşfi tüm desteklenen platformlarda aynı şekilde çalışır.
+
+---
+
+## 11. v0.6 Git Paket Yöneticisi
+
+Zet v0.6, merkezi bir kayıt sunucusuna ihtiyaç duymadan Git depolarını proje bağımlılığı olarak kullanabilir. Doğrudan ve geçişli bağımlılıklar SemVer etiketlerinden çözülür; seçilen Git commit'i ile paket içeriğinin SHA-256 özeti `zet.lock` dosyasına yazılır.
+
+Paket komutları için sistemde `git` komutunun `PATH` üzerinde bulunması gerekir. Kaynaktan derleme ve Zet uygulaması üretme gereksinimi olarak Rust stable toolchain kullanılmaya devam eder.
+
+### 11.1 Paket Deposu Biçimi
+
+Bir Git deposunun Zet paketi olabilmesi için depo kökünde `zet.toml` bulunmalıdır. `entry`, paketin dışarı açılan Zet kaynak dosyasını belirtir:
+
+```toml
+[package]
+name = "ornek_math"
+version = "1.2.0"
+entry = "src/lib.zt"
+
+[dependencies]
+```
+
+Paket adı import sözdizimiyle uyumlu olmalıdır: harf veya `_` ile başlamalı; devamında yalnızca harf, rakam ve `_` kullanılmalıdır. `entry` paket deposu içinde kalan göreli bir yol olmalıdır; mutlak yollar ve `..` ile üst dizine çıkış reddedilir.
+
+Sürümler `v1.2.0` veya `1.2.0` biçimindeki Git etiketleriyle yayımlanır. Etiketteki SemVer değeri ile manifestteki `[package].version` aynı olmalıdır. Yeniden üretilebilir çözümleme için SemVer etiketi bulunmayan depolar paket olarak kurulmaz.
+
+### 11.2 Paket Ekleme
+
+GitHub kısaltmasıyla en yeni sürümü eklemek için:
+
+```sh
+zet add sahip/ornek-math
+```
+
+Belirli bir sürüm veya SemVer koşulu da verilebilir:
+
+```sh
+zet add sahip/ornek-math@1.2.0
+zet add sahip/ornek-math@^1.2
+zet add "sahip/ornek-math@>=1.2, <2.0"
+```
+
+HTTPS gibi `://` içeren tam Git URL'leri de desteklenir:
+
+```sh
+zet add https://git.example.com/ekip/ornek-math.git@1.2.0
+```
+
+`zet add`, uygun en yüksek etiketi seçer, paketin kendi `zet.toml` dosyasından adını doğrular ve çözülmüş tam sürümü projenin manifestine ekler:
+
+```toml
+[dependencies]
+ornek_math = { git = "https://github.com/sahip/ornek-math.git", version = "1.2.0" }
+```
+
+### 11.3 Kurma, Güncelleme ve Kaldırma
+
+```sh
+zet install             # Manifest ve mevcut kilide göre tüm paketleri kurar
+zet update              # Tüm doğrudan paketleri en yeni SemVer etiketine taşır
+zet update ornek_math   # Yalnızca seçilen doğrudan paketi günceller
+zet remove ornek_math   # Bağımlılığı ve artık kullanılmayan geçişli paketleri kaldırır
+```
+
+`zet install`, geçerli bir kilit kaydı varsa aynı commit'i yeniden kullanır. Kilit yoksa manifestteki sürüm koşullarını çözüp yeni bir kilit üretir. Birden fazla bağımlılık aynı paket için uyumsuz Git deposu veya sürüm istiyorsa kurulum açık bir bağımlılık çakışmasıyla durur.
+
+`zet update`, güncellenecek doğrudan bağımlılık için depodaki en yeni SemVer etiketini seçer ve `zet.toml` ile `zet.lock` dosyalarını birlikte yeniler. Büyük sürüm yükseltmeleri de seçilebildiği için değişiklikler kaynak kontrolüne alınmadan önce uygulama yeniden derlenmelidir.
+
+### 11.4 `zet.lock` ve Bütünlük
+
+Üretilen `zet.lock` dosyası doğrudan ve geçişli her paket için aşağıdaki bilgileri tutar:
+
+```toml
+lock_version = 1
+
+[[package]]
+name = "ornek_math"
+git = "https://github.com/sahip/ornek-math.git"
+requirement = "1.2.0"
+version = "1.2.0"
+commit = "0123456789abcdef0123456789abcdef01234567"
+checksum = "sha256:..."
+```
+
+- `commit`, hareket ettirilemeyen kurulum kimliğidir.
+- `checksum`, checkout içeriğinin deterministik SHA-256 özetidir.
+- Kilit sürümü, yinelenen paket kayıtları, commit ve checksum kurulum sırasında doğrulanır.
+- Sembolik bağlantı içeren paketler güvenli ve platformlar arası aynı içerik garantisi verilemediği için reddedilir.
+
+Uygulama depolarında `zet.toml` ve `zet.lock` kaynak kontrolüne eklenmeli, üretilen `.zet/` dizini eklenmemelidir.
+
+### 11.5 Önbellek ve Proje Checkout'u
+
+Git depolarının bare mirror kopyaları makine genelinde ortak bir önbellekte tutulur:
+
+| Platform | Varsayılan önbellek |
+| --- | --- |
+| Windows | `%LOCALAPPDATA%\\Zet\\cache` |
+| Linux/macOS | `$XDG_CACHE_HOME/zet` veya `$HOME/.cache/zet` |
+
+`ZET_CACHE_DIR` ortam değişkeni bu konumu değiştirebilir. Çözülmüş kaynaklar her proje için `.zet/packages/<paket-adı>/` altında checkout edilir. Böylece ağ ve Git nesneleri projeler arasında paylaşılırken derlemede kullanılan paket ağacı projeye özel kalır.
+
+Kilitli commit ortak önbellekte mevcutsa `zet install` onu ağdan yeniden çözmeden kullanabilir. `zet add` ve `zet update` ise yeni etiketleri görebilmek için uzak depoyu günceller.
+
+### 11.6 Paket Importları
+
+Paketin giriş dosyasını import etmek için manifestteki paket adı kullanılır:
+
+```zet
+import ornek_math
+
+nondet fn main() -> Void {
+    println(ornek_math::topla(20, 22))
+}
+```
+
+Paket giriş dosyasının yanındaki bir modül `import ornek_math.istatistik` biçiminde içe aktarılabilir. Paketlerin kendi `[dependencies]` bölümleri de çözülür; geçişli paketler aynı import haritasına katılır.
+
+v0.6, Git tabanlı bağımlılık yönetiminin ilk kararlı temelidir. Merkezi paket arama, ad ayırma ve `zet publish` iş akışı ileriki bir sürümün kapsamındadır.

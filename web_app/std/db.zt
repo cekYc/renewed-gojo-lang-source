@@ -1,0 +1,57 @@
+nondet fn execute(db_url: String, sql: String) -> String {
+    return __rust__("{
+        let db_url_str = db_url.clone();
+        let sql_str = sql.clone();
+        let handle = ::tokio::runtime::Handle::current();
+        let _ = ::tokio::task::block_in_place(|| {
+            handle.block_on(async {
+                let opts = ::sqlx::sqlite::SqliteConnectOptions::new()
+                    .filename(&db_url_str.replace(\"sqlite://\", \"\"))
+                    .create_if_missing(true);
+                let pool = ::sqlx::sqlite::SqlitePoolOptions::new()
+                    .connect_with(opts).await.unwrap();
+                ::sqlx::query(&sql_str).execute(&pool).await.unwrap();
+            })
+        });
+        \"OK\".to_string()
+    }")
+}
+
+nondet fn query(db_url: String, sql: String) -> Untrusted {
+    return __rust__("{
+        let db_url_str = db_url.clone();
+        let sql_str = sql.clone();
+        let handle = ::tokio::runtime::Handle::current();
+        let res = ::tokio::task::block_in_place(|| {
+            handle.block_on(async {
+                let opts = ::sqlx::sqlite::SqliteConnectOptions::new()
+                    .filename(&db_url_str.replace(\"sqlite://\", \"\"))
+                    .create_if_missing(true);
+                let pool = ::sqlx::sqlite::SqlitePoolOptions::new()
+                    .connect_with(opts).await.unwrap();
+                use ::sqlx::{Row, Column, TypeInfo};
+                let rows = ::sqlx::query(&sql_str).fetch_all(&pool).await.unwrap_or_default();
+                let mut results = vec![];
+                for row in rows {
+                    let mut map = ::serde_json::Map::new();
+                    for col in row.columns() {
+                        let name = col.name().to_string();
+                        // Try integer
+                        if let Ok(v) = row.try_get::<i64, _>(col.ordinal()) {
+                            map.insert(name, ::serde_json::json!(v));
+                        } else if let Ok(v) = row.try_get::<f64, _>(col.ordinal()) {
+                            map.insert(name, ::serde_json::json!(v));
+                        } else if let Ok(v) = row.try_get::<String, _>(col.ordinal()) {
+                            map.insert(name, ::serde_json::Value::String(v));
+                        } else {
+                            map.insert(name, ::serde_json::Value::Null);
+                        }
+                    }
+                    results.push(::serde_json::Value::Object(map));
+                }
+                ::serde_json::to_string(&results).unwrap_or_default()
+            })
+        });
+        Untrusted(res)
+    }")
+}

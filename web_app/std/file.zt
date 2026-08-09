@@ -1,0 +1,7 @@
+nondet fn read_text(path: String) -> String {
+    return __rust__("::std::fs::read_to_string(&path).unwrap_or_else(|_| String::new())")
+}
+
+nondet fn write_text(path: String, content: String) {
+    __rust__("::std::fs::write(&path, &content).unwrap_or(())")
+}

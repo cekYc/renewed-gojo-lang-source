@@ -1,0 +1,7 @@
+nondet fn serve(port: String) {
+    __rust__("
+        let app = crate::_zet_build_router();
+        let listener = ::tokio::net::TcpListener::bind(&port).await.unwrap();
+        ::axum::serve(listener, app).await.unwrap();
+    ")
+}

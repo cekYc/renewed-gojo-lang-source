@@ -7,7 +7,7 @@ mod lsp;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{exit, Command};
 use std::collections::HashMap;
 use crate::ast::{TopLevel, FunctionDef, StructDef};
 use crate::analysis::determinism::{DeterminismAnalyzer, SymbolTable};
@@ -103,8 +103,29 @@ pub fn extract_functions(items: &[TopLevel], funcs: &mut Vec<FunctionDef>, curre
     }
 }
 
+fn print_usage() {
+    println!("Zet compiler v{}", env!("CARGO_PKG_VERSION"));
+    println!();
+    println!("Kullanim:");
+    println!("  zet <dosya.zt>        Zet programini derle ve calistir");
+    println!("  zet --lsp             Dil sunucusunu baslat");
+    println!("  zet --version         Surum bilgisini goster");
+    println!("  zet --help            Bu yardimi goster");
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
+
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("zet-compiler {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print_usage();
+        return;
+    }
+
     if args.iter().any(|a| a == "--lsp") {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
@@ -114,8 +135,8 @@ fn main() {
     }
 
     if args.len() < 2 {
-        println!("Kullanim: zet <dosya.zt> [--lsp]");
-        return;
+        print_usage();
+        exit(2);
     }
 
     let filename = &args[1];
@@ -123,19 +144,23 @@ fn main() {
 
     let content = match fs::read_to_string(filename) {
         Ok(c) => c,
-        Err(_) => { println!("Dosya okunamadi!"); return; }
+        Err(e) => { eprintln!("Dosya okunamadi: {}", e); exit(1); }
     };
     let content = content.trim_start_matches('\u{feff}');
 
-    let (_, toplevels) = match parser::parse_program(&content) {
+    let (remaining, toplevels) = match parser::parse_program(&content) {
         Ok(res) => res,
-        Err(e) => { println!("Syntax Hatası:\n{:?}", e); return; }
+        Err(e) => { eprintln!("Syntax Hatası:\n{:?}", e); exit(1); }
     };
+    if !remaining.trim().is_empty() {
+        eprintln!("PARSER STOPPED EARLY. Remaining:\n{}", remaining.trim().chars().take(200).collect::<String>());
+        exit(1);
+    }
     
     let mut loaded = HashMap::new();
     let resolved_toplevels = match resolve_imports(base_path, toplevels, &mut loaded) {
         Ok(r) => r,
-        Err(e) => { println!("{}", e); return; }
+        Err(e) => { eprintln!("{}", e); exit(1); }
     };
     
     // We group modules by name in codegen to prevent duplicate `pub mod a` declarations.
@@ -152,10 +177,10 @@ fn main() {
     let symbols = SymbolTable { functions: func_map };
 
     for func in &all_functions {
-        if let Err(e) = DeterminismAnalyzer::check(func, &symbols) { println!("[ZET HATA] Determinizm ({}): {}", func.name, e); return; }
-        if let Err(e) = TaintAnalyzer::check(func, &symbols) { println!("[ZET HATA] Taint ({}): {}", func.name, e); return; }
+        if let Err(e) = DeterminismAnalyzer::check(func, &symbols) { eprintln!("[ZET HATA] Determinizm ({}): {}", func.name, e); exit(1); }
+        if let Err(e) = TaintAnalyzer::check(func, &symbols) { eprintln!("[ZET HATA] Taint ({}): {}", func.name, e); exit(1); }
         let mut scope_pass = ScopeAnalyzer::new();
-        if let Err(e) = scope_pass.analyze(func) { println!("[ZET HATA] Scope ({}): {}", func.name, e); return; }
+        if let Err(e) = scope_pass.analyze(func) { eprintln!("[ZET HATA] Scope ({}): {}", func.name, e); exit(1); }
     }
 
     let mut generator = codegen::Codegen::new();
@@ -163,11 +188,11 @@ fn main() {
 
     let output_path = "src/app.rs";
     if let Err(_) = fs::write(output_path, rust_code) {
-         println!("Rust dosyasi yazilamadi.");
-         return;
+         eprintln!("Rust dosyasi yazilamadi.");
+         exit(1);
     }
 
-    println!("[Zet v0.3] Derleniyor ve Çalıştırılıyor...");
+    println!("[Zet v{}] Derleniyor ve Çalıştırılıyor...", env!("CARGO_PKG_VERSION"));
     
     let user_args: Vec<String> = args[2..].to_vec();
     let mut cmd = Command::new("cargo");
@@ -177,6 +202,13 @@ fn main() {
     let status = cmd.status();
     match status {
         Ok(s) if s.success() => println!(""),
-        _ => println!("Çalışma zamanı hatası!"),
+        Ok(s) => {
+            eprintln!("Çalışma zamanı hatası!");
+            exit(s.code().unwrap_or(1));
+        }
+        Err(e) => {
+            eprintln!("Cargo başlatılamadı: {}", e);
+            exit(1);
+        }
     }
 }

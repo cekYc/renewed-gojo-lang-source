@@ -1,0 +1,94 @@
+import std.http
+import std.db
+import std.file
+
+// Veritabanı başlatma
+nondet fn init_db() -> Void {
+    let sql = "CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, done INTEGER)"
+    call std::db::execute("tasks.db", sql)
+}
+
+// 1. Görevleri Listeleme (GET)
+@get("/api/tasks/list")
+nondet fn list_tasks() -> String! {
+    let result = call std::db::query("tasks.db", "SELECT * FROM tasks ORDER BY id DESC")
+    // Dışarıdan okunan veriyi validate etmemiz gerekir, DB'den gelen veri Untrusted.
+    validate result {
+        success: {
+            return result
+        }
+        fail: {
+            return error("Veritabanı okuma hatası!")
+        }
+    }
+}
+
+// 2. Görev Ekleme (POST)
+@post("/api/tasks/add")
+nondet fn add_task(payload: Untrusted) -> String! {
+    validate payload {
+        success: {
+            let title = json(payload, "title")
+            if title == "" {
+                return error("Görev başlığı boş olamaz.")
+            }
+
+            // Basit SQL Injection koruması (Gerçek dünyada prepared statements kullanılır)
+            let safe_title = title // (Burada ekstra validasyon/kaçış eklenebilir)
+            let sql = "INSERT INTO tasks (title, done) VALUES ('" + safe_title + "', 0)"
+            call std::db::execute("tasks.db", sql)
+
+            return "{\"status\": \"success\"}"
+        }
+        fail: {
+            return error("Geçersiz veri biçimi.")
+        }
+    }
+}
+
+// 3. Görev Durumu Değiştirme (POST)
+@post("/api/tasks/toggle")
+nondet fn toggle_task(payload: Untrusted) -> String! {
+    validate payload {
+        success: {
+            let id = json(payload, "id")
+            let done_str = json(payload, "done") // 0 veya 1 gelecek
+
+            let sql = "UPDATE tasks SET done = " + done_str + " WHERE id = " + id
+            call std::db::execute("tasks.db", sql)
+
+            return "{\"status\": \"success\"}"
+        }
+        fail: {
+            return error("Geçersiz görev verisi.")
+        }
+    }
+}
+
+// 4. Görev Silme (POST)
+@post("/api/tasks/delete")
+nondet fn delete_task(payload: Untrusted) -> String! {
+    validate payload {
+        success: {
+            let id = json(payload, "id")
+
+            let sql = "DELETE FROM tasks WHERE id = " + id
+            call std::db::execute("tasks.db", sql)
+
+            return "{\"status\": \"success\"}"
+        }
+        fail: {
+            return error("Geçersiz görev ID'si.")
+        }
+    }
+}
+
+nondet fn main() -> Void {
+    println("ZetTask Backend Başlatılıyor...")
+    call init_db()
+    println("Veritabanı hazır (tasks.db).")
+
+    println("Sunucu 8081 portunda dinleniyor...")
+    println("Frontend için 'frontend/index.html' dosyasını tarayıcınızda açın.")
+    std::http::serve("8081")
+}

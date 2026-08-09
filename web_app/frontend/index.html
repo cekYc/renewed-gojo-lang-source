@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZetTask | Zero-Trust Tasks</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --glass-bg: rgba(22, 27, 34, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --accent-glow: 0 0 20px rgba(0, 120, 255, 0.4);
+            --text-main: #e6edf3;
+            --text-muted: #7d8590;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-image:
+                radial-gradient(circle at 15% 50%, rgba(20, 75, 150, 0.15), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(120, 20, 150, 0.15), transparent 25%);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        }
+
+        h1 {
+            text-align: center;
+            margin-top: 0;
+            font-weight: 600;
+            background: linear-gradient(90deg, #58a6ff, #bc8cff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        h1::before {
+            content: '⚡';
+            font-size: 24px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            background: rgba(0,0,0,0.2);
+            border: 1px solid var(--glass-border);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 16px;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        input[type="text"]:focus {
+            border-color: #58a6ff;
+            box-shadow: 0 0 10px rgba(88, 166, 255, 0.2);
+        }
+
+        button {
+            background: linear-gradient(135deg, #1f6feb, #388bfd);
+            border: none;
+            color: white;
+            padding: 0 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            box-shadow: var(--accent-glow);
+            transform: translateY(-1px);
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+        }
+
+        li:hover {
+            background: rgba(255,255,255,0.06);
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        li.done .task-title {
+            text-decoration: line-through;
+            color: var(--text-muted);
+        }
+
+        .task-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .task-title {
+            font-size: 16px;
+            transition: color 0.2s;
+        }
+
+        .checkbox {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #58a6ff;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.2s;
+        }
+
+        .checkbox.checked {
+            background: #58a6ff;
+        }
+
+        .checkbox.checked::after {
+            content: '✓';
+            color: #0d1117;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .delete-btn {
+            background: transparent;
+            color: #f85149;
+            padding: 5px;
+            border-radius: 4px;
+        }
+
+        .delete-btn:hover {
+            background: rgba(248, 81, 73, 0.1);
+            box-shadow: none;
+            transform: none;
+        }
+
+        .status-badge {
+            display: inline-block;
+            background: rgba(46, 160, 67, 0.15);
+            color: #3fb950;
+            border: 1px solid rgba(46, 160, 67, 0.4);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            width: fit-content;
+            margin-left: auto;
+            margin-right: auto;
+            display: block;
+            text-align: center;
+        }
+
+        /* Loading animation */
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            display: none;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>ZetTask</h1>
+    <div class="status-badge" id="status-badge">Backend Connected</div>
+
+    <div class="input-group">
+        <input type="text" id="taskInput" placeholder="Sıfır güven ile yeni görev ekle..." autocomplete="off">
+        <button id="addBtn">Ekle</button>
+    </div>
+
+    <div class="spinner" id="loading"></div>
+
+    <ul id="taskList">
+        <!-- Tasks will be injected here -->
+    </ul>
+</div>
+
+<script>
+    const API_URL = 'http://127.0.0.1:8081';
+
+    const taskInput = document.getElementById('taskInput');
+    const addBtn = document.getElementById('addBtn');
+    const taskList = document.getElementById('taskList');
+    const loading = document.getElementById('loading');
+    const statusBadge = document.getElementById('status-badge');
+
+    // Fetch and render tasks
+    async function fetchTasks() {
+        showLoading(true);
+        try {
+            const res = await fetch(`${API_URL}/api/tasks/list`);
+            const data = await res.json();
+            renderTasks(data);
+            setStatus(true);
+        } catch (error) {
+            console.error("Error fetching tasks:", error);
+            setStatus(false);
+        }
+        showLoading(false);
+    }
+
+    function renderTasks(tasks) {
+        taskList.innerHTML = '';
+        if (tasks.length === 0) {
+            taskList.innerHTML = '<li style="justify-content: center; color: var(--text-muted)">Henüz görev yok.</li>';
+            return;
+        }
+
+        tasks.forEach(task => {
+            const li = document.createElement('li');
+            if (task.done === 1) li.classList.add('done');
+
+            li.innerHTML = `
+                <div class="task-left">
+                    <div class="checkbox ${task.done === 1 ? 'checked' : ''}" onclick="toggleTask(${task.id}, ${task.done})"></div>
+                    <span class="task-title">${task.title}</span>
+                </div>
+                <button class="delete-btn" onclick="deleteTask(${task.id})">✕</button>
+            `;
+            taskList.appendChild(li);
+        });
+    }
+
+    async function addTask() {
+        const title = taskInput.value.trim();
+        if (!title) return;
+
+        taskInput.disabled = true;
+        addBtn.disabled = true;
+
+        try {
+            await fetch(`${API_URL}/api/tasks/add`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title })
+            });
+            taskInput.value = '';
+            await fetchTasks();
+        } catch (e) {
+            console.error("Ekleme hatası:", e);
+        }
+
+        taskInput.disabled = false;
+        addBtn.disabled = false;
+        taskInput.focus();
+    }
+
+    async function toggleTask(id, currentStatus) {
+        const newStatus = currentStatus === 1 ? 0 : 1;
+        try {
+            await fetch(`${API_URL}/api/tasks/toggle`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id.toString(), done: newStatus.toString() })
+            });
+            fetchTasks();
+        } catch (e) {
+            console.error("Toggle hatası:", e);
+        }
+    }
+
+    async function deleteTask(id) {
+        try {
+            await fetch(`${API_URL}/api/tasks/delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id.toString() })
+            });
+            fetchTasks();
+        } catch (e) {
+            console.error("Silme hatası:", e);
+        }
+    }
+
+    function showLoading(show) {
+        loading.style.display = show ? 'block' : 'none';
+        if(show) taskList.innerHTML = '';
+    }
+
+    function setStatus(isOnline) {
+        if(isOnline) {
+            statusBadge.textContent = 'Backend Online (Zero Trust)';
+            statusBadge.style.color = '#3fb950';
+            statusBadge.style.background = 'rgba(46, 160, 67, 0.15)';
+            statusBadge.style.borderColor = 'rgba(46, 160, 67, 0.4)';
+        } else {
+            statusBadge.textContent = 'Backend Offline';
+            statusBadge.style.color = '#f85149';
+            statusBadge.style.background = 'rgba(248, 81, 73, 0.15)';
+            statusBadge.style.borderColor = 'rgba(248, 81, 73, 0.4)';
+        }
+    }
+
+    // Events
+    addBtn.addEventListener('click', addTask);
+    taskInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') addTask();
+    });
+
+    // Init
+    fetchTasks();
+</script>
+</body>
+</html>

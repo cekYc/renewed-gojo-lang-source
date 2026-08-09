@@ -49,7 +49,7 @@ const YELLOW: &str = "\x1b[33m";
 const BLUE: &str = "\x1b[34m";
 const RED: &str = "\x1b[31m";
 
-/// Zet v0.3 — Untrusted: Dış dünyadan gelen lekeli veri sarmalayıcısı.
+/// Zet v0.4 — Untrusted: Dış dünyadan gelen lekeli veri sarmalayıcısı.
 #[derive(Clone, Debug)]
 struct Untrusted(String);
 
@@ -100,7 +100,7 @@ impl Util {
 struct HTTP;
 impl HTTP {
     async fn get(url: String) -> Untrusted {
-        let client = reqwest::Client::builder().user_agent("ZetLang/0.3").build().unwrap();
+        let client = reqwest::Client::builder().user_agent("ZetLang/0.4").build().unwrap();
         match client.get(&url).send().await {
             Ok(res) => Untrusted(res.text().await.unwrap_or_else(|e| format!("Error: {}", e))),
             Err(e) => Untrusted(format!("Error: {}", e))
@@ -304,6 +304,8 @@ impl<'a> ZetMul<i64> for &'a str { type Output = String; fn z_mul(self, rhs: i64
             }
             code.push_str("    }));\n");
         }
+        code.push_str("        let cors = ::tower_http::cors::CorsLayer::permissive();\n");
+        code.push_str("        app = app.layer(cors);\n");
         code.push_str("    app\n}\n");
         code
     }

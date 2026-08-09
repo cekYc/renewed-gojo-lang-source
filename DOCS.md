@@ -1,4 +1,4 @@
-# 📘 Zet Lang Resmi Dökümantasyonu (v0.4)
+# 📘 Zet Lang Resmi Dökümantasyonu (v0.5)
 
 Zet Lang'e hoş geldiniz. Bu dökümantasyon, dilin sözdizimini (syntax), temel konseptlerini, güvenlik modelini ve standart kütüphanesini içerir.
 
@@ -15,6 +15,7 @@ Zet Lang'e hoş geldiniz. Bu dökümantasyon, dilin sözdizimini (syntax), temel
 7. [Standart Kütüphane (Stdlib)](#7-standart-kütüphane-stdlib)
 8. [v0.3 Yeni Özellikler](#8-v03-yeni-özellikler)
 9. [v0.4 Yeni Özellikler (Hata Yönetimi ve LSP)](#9-v04-yeni-özellikler-hata-yönetimi-ve-lsp)
+10. [v0.5 Proje Sistemi ve CLI](#10-v05-proje-sistemi-ve-cli)
 
 ---
 
@@ -478,4 +479,151 @@ nondet fn kullanici_ekle(payload: Untrusted) -> String {
 
 ### 9.5 Language Server Protocol (LSP)
 
-IDE/Editor entegrasyonu için Zet Derleyicisi artık bir LSP sunucusu barındırmaktadır. `zet-compiler --lsp` komutu ile dil sunucusu modunda başlatılabilir. Dosyadaki kodları anlık olarak tarar, sözdizimi, scope hataları ve **Zero Trust (Taint) İhlallerini** anlık olarak editörünüze diagnostic olarak gönderir.
+IDE/Editor entegrasyonu için Zet Derleyicisi artık bir LSP sunucusu barındırmaktadır. `zet-compiler --lsp` komutu ile dil sunucusu modunda başlatılabilir. Dosyadaki kodları anlık olarak tarar, sözdizimi, scope hataları ve **Zero Trust (Taint) İhlallerini** anlık olarak editörünüze diagnostic olarak gönderir.
+
+---
+
+## 10. v0.5 Proje Sistemi ve CLI
+
+Zet v0.5, tek bir `.zt` dosyasını çalıştırmanın yanında standart bir proje yapısı ve komut satırı iş akışı getirir. Yeni komutlar şunlardır:
+
+- `zet new`: Yeni bir Zet projesi oluşturur.
+- `zet run`: Manifestte tanımlanan projeyi derler ve çalıştırır.
+- `zet build`: Projeden yerel bir çalıştırılabilir dosya üretir.
+
+Eski `zet dosya.zt` kullanımı geriye dönük uyumlu olarak çalışmaya devam eder.
+
+### 10.1 Yeni Proje Oluşturma
+
+```sh
+zet new merhaba
+cd merhaba
+zet run
+```
+
+`zet new merhaba` komutu aşağıdaki yapıyı oluşturur:
+
+```text
+merhaba/
+├── zet.toml
+├── .gitignore
+└── src/
+    └── main.zt
+```
+
+Oluşturulan `src/main.zt` dosyası çalışmaya hazır bir başlangıç programı içerir:
+
+```zet
+nondet fn main() -> Void {
+    println("Merhaba, merhaba!")
+}
+```
+
+Hedef klasör zaten varsa `zet new` mevcut dosyaların üzerine yazmaz ve hata verir. Proje adında harf, rakam, `-` ve `_` karakterleri kullanılabilir.
+
+### 10.2 `zet.toml` Proje Manifesti
+
+Her v0.5 projesinin kökünde bir `zet.toml` manifesti bulunur:
+
+```toml
+[package]
+name = "merhaba"
+version = "0.1.0"
+entry = "src/main.zt"
+```
+
+| Alan | Zorunlu | Açıklama |
+| --- | :---: | --- |
+| `name` | Evet | Paket ve üretilen çalıştırılabilir dosyanın adı. |
+| `version` | Hayır | Proje sürümü. Belirtilmezse `0.1.0` kullanılır. |
+| `entry` | Hayır | Ana Zet kaynak dosyası. Belirtilmezse `src/main.zt` kullanılır. |
+
+`zet run` ve `zet build`, geçerli klasörden üst klasörlere doğru `zet.toml` arar. Bu nedenle komutlar proje içindeki bir alt klasörden de çalıştırılabilir.
+
+### 10.3 Projeyi Çalıştırma
+
+Manifestteki giriş dosyasını çalıştırmak için proje içinde şu komut yeterlidir:
+
+```sh
+zet run
+```
+
+Belirli bir kaynak dosyası açıkça da seçilebilir:
+
+```sh
+zet run src/main.zt
+```
+
+Program argümanları `--` ayırıcısından sonra iletilir:
+
+```sh
+zet run -- birinci ikinci
+zet run src/main.zt -- birinci ikinci
+```
+
+### 10.4 Yerel Çalıştırılabilir Dosya Üretme
+
+```sh
+zet build
+```
+
+Derleme başarılı olduğunda çıktı proje içindeki `.zet/bin/` dizinine yazılır:
+
+```text
+.zet/bin/merhaba       # Linux ve macOS
+.zet/bin/merhaba.exe   # Windows
+```
+
+Belirli bir tek dosya için de build alınabilir:
+
+```sh
+zet build program.zt
+```
+
+### 10.5 İzole `.zet` Çalışma Dizini
+
+v0.4.5 ve önceki sürümlerde üretilen Rust kaynağı paket runtime dizinine yazılıyordu. v0.5 ile her proje kendi çalışma alanını kullanır:
+
+```text
+.zet/
+├── runtime/    # Üretilen Rust uygulaması ve Cargo manifesti
+├── target/     # Projeye özel Cargo derleme önbelleği
+└── bin/        # zet build çıktıları
+```
+
+Bu yapı farklı projelerin üretilen kaynaklarının ve derleme çıktılarının birbiriyle çakışmasını engeller. `.zet/` üretilen bir dizindir; kaynak kontrolüne eklenmemelidir. `zet new` tarafından oluşturulan `.gitignore` bunu otomatik olarak dışlar.
+
+İlk `zet run` veya `zet build` çağrısı Rust bağımlılıklarını derlediği için daha uzun sürebilir. Aynı projedeki sonraki çağrılar `.zet/target` önbelleğini yeniden kullanır.
+
+### 10.6 Tek Dosyalı Kullanım
+
+Mevcut programlar proje oluşturmadan çalıştırılabilir:
+
+```sh
+zet program.zt
+zet run program.zt
+zet build program.zt
+```
+
+Bu kullanımda `.zet/` çalışma dizini kaynak dosyanın bulunduğu klasörde oluşturulur. Eski `zet program.zt arguman` biçimi program argümanlarını doğrudan iletmeye devam eder.
+
+### 10.7 Diğer Komutlar
+
+```sh
+zet --version   # Derleyici sürümünü gösterir
+zet --help      # Komut yardımını gösterir
+zet --lsp       # Dil sunucusunu başlatır
+```
+
+### 10.8 v0.4.5'ten Geçiş
+
+Tek dosyalı kod için değişiklik gerekmez. Bir v0.5 projesine geçmek için kaynak dosyanızı `src/main.zt` konumuna taşıyıp proje köküne aşağıdaki manifesti ekleyebilirsiniz:
+
+```toml
+[package]
+name = "uygulamam"
+version = "0.1.0"
+entry = "src/main.zt"
+```
+
+Ardından `zet run` ve `zet build` komutları kullanılabilir. Windows, Linux ve macOS başlatıcıları çalışma klasörünü değiştirmeden komutları derleyiciye ilettiği için proje keşfi tüm desteklenen platformlarda aynı şekilde çalışır.

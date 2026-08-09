@@ -4,7 +4,7 @@
 
 ### The language that refuses to compile code it doesn't trust.
 
-[![Version](https://img.shields.io/badge/v0.4.5-orange?style=flat-square&label=version)]()
+[![Version](https://img.shields.io/badge/v0.5.0-orange?style=flat-square&label=version)]()
 [![License](https://img.shields.io/badge/CC_BY--NC--SA_4.0-red?style=flat-square&label=license)]()
 [![Written In](https://img.shields.io/badge/Rust-black?style=flat-square&logo=rust)]()
 [![Platform](https://img.shields.io/badge/Windows_%7C_Linux_%7C_macOS-7c3aed?style=flat-square)]()
@@ -17,10 +17,11 @@
 
 ---
 
-### What’s New in v0.4.5?
-- **Cross-platform releases**: Native packages for Windows x64, Linux x64/ARM64, and macOS Intel/Apple Silicon.
-- **Portable runtime discovery**: `ZET_RUNTIME_DIR` allows launchers to run the compiler from any working directory.
-- **User-level installation**: Windows, Linux, and macOS installers work without administrator/root privileges.
+### What’s New in v0.5.0?
+- **Project workflow**: `zet new`, `zet run`, and `zet build` cover the path from a new project to a native executable.
+- **Project manifests**: `zet.toml` defines the package name, version, and entry source.
+- **Isolated builds**: Generated Rust, Cargo targets, and binaries stay inside each project's `.zet/` directory.
+- **Backward compatible CLI**: Existing `zet file.zt` programs continue to work.
 
 ### Language features from v0.4
 - **Backend First-Class Features**: Automatic HTTP Routing (`@get`, `@post`), Zero-Trust SQLite DB integration.
@@ -113,25 +114,16 @@ cd zet-lang-source
 cargo build --release --bin zet-compiler
 ```
 
-### Hello, Zet
+### Create and run a project
 
-Create `hello.zt`:
-```zet
-nondet fn main() -> Void {
-    println("Hello from Zet!")
-}
-```
-
-Run it:
 ```bash
-zet hello.zt
+zet new hello
+cd hello
+zet run
+zet build
 ```
 
-Output:
-```
-[Zet Parser] 1 fonksiyon bulundu.
-Hello from Zet!
-```
+`zet new` creates `zet.toml` and `src/main.zt`. `zet build` writes the native executable to `.zet/bin/`. You can still run a standalone file with `zet hello.zt`.
 
 ---
 
@@ -260,6 +252,7 @@ Release builds use Rust’s optimized native-code pipeline with LTO, a single co
 ```
 src/
 ├── main.rs              # CLI entry & pipeline orchestrator
+├── project.rs           # zet.toml discovery & isolated .zet workspaces
 ├── parser.rs            # Nom-based recursive descent parser
 ├── ast.rs               # AST node definitions
 ├── codegen.rs           # Rust code generation (preamble + per-function)
@@ -285,6 +278,7 @@ src/
 - [x] Module system & imports
 - [x] Windows, Linux, and macOS packages
 - [x] LSP diagnostics prototype
+- [x] Project manifests and `zet new/run/build` workflow
 - [ ] Package manager
 
 ---

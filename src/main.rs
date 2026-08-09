@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command};
 use std::collections::HashMap;
-use crate::ast::{TopLevel, FunctionDef, StructDef};
+use crate::ast::{TopLevel, FunctionDef};
 use crate::analysis::determinism::{DeterminismAnalyzer, SymbolTable};
 use crate::analysis::taint::TaintAnalyzer;
 use crate::analysis::scope::ScopeAnalyzer;
@@ -105,6 +105,7 @@ pub fn extract_functions(items: &[TopLevel], funcs: &mut Vec<FunctionDef>, curre
 
 fn print_usage() {
     println!("Zet compiler v{}", env!("CARGO_PKG_VERSION"));
+    println!("Platform: {}-{}", env::consts::OS, env::consts::ARCH);
     println!();
     println!("Kullanim:");
     println!("  zet <dosya.zt>        Zet programini derle ve calistir");
@@ -186,9 +187,20 @@ fn main() {
     let mut generator = codegen::Codegen::new();
     let rust_code = generator.generate(&resolved_toplevels);
 
-    let output_path = "src/app.rs";
-    if let Err(_) = fs::write(output_path, rust_code) {
-         eprintln!("Rust dosyasi yazilamadi.");
+    let runtime_dir = env::var_os("ZET_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let runtime_manifest = runtime_dir.join("Cargo.toml");
+    let output_path = runtime_dir.join("src").join("app.rs");
+
+    if !runtime_manifest.is_file() {
+        eprintln!("Zet runtime bulunamadi: {}", runtime_manifest.display());
+        eprintln!("ZET_RUNTIME_DIR degiskenini runtime klasorune yonlendirin.");
+        exit(1);
+    }
+
+    if let Err(e) = fs::write(&output_path, rust_code) {
+         eprintln!("Rust dosyasi yazilamadi ({}): {}", output_path.display(), e);
          exit(1);
     }
 
@@ -196,6 +208,7 @@ fn main() {
     
     let user_args: Vec<String> = args[2..].to_vec();
     let mut cmd = Command::new("cargo");
+    cmd.current_dir(&runtime_dir);
     cmd.arg("run").arg("--release").arg("--quiet").arg("--bin").arg("app").arg("--");
     for arg in &user_args { cmd.arg(arg); }
     

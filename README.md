@@ -4,10 +4,10 @@
 
 ### The language that refuses to compile code it doesn't trust.
 
-[![Version](https://img.shields.io/badge/v0.4.0-orange?style=flat-square&label=version)]()
+[![Version](https://img.shields.io/badge/v0.4.5-orange?style=flat-square&label=version)]()
 [![License](https://img.shields.io/badge/CC_BY--NC--SA_4.0-red?style=flat-square&label=license)]()
 [![Written In](https://img.shields.io/badge/Rust-black?style=flat-square&logo=rust)]()
-[![Platform](https://img.shields.io/badge/Windows_x64-0078D6?style=flat-square&logo=windows)]()
+[![Platform](https://img.shields.io/badge/Windows_%7C_Linux_%7C_macOS-7c3aed?style=flat-square)]()
 
 **Compile-time taint analysis · Native speed · Structured concurrency · Zero runtime overhead**
 
@@ -17,7 +17,12 @@
 
 ---
 
-### What's New in v0.4?
+### What’s New in v0.4.5?
+- **Cross-platform releases**: Native packages for Windows x64, Linux x64/ARM64, and macOS Intel/Apple Silicon.
+- **Portable runtime discovery**: `ZET_RUNTIME_DIR` allows launchers to run the compiler from any working directory.
+- **User-level installation**: Windows, Linux, and macOS installers work without administrator/root privileges.
+
+### Language features from v0.4
 - **Backend First-Class Features**: Automatic HTTP Routing (`@get`, `@post`), Zero-Trust SQLite DB integration.
 - **Advanced Error Handling**: `T!` error types, `catch` fallback, and `?` propagation operators.
 - **Language Server Protocol (LSP)**: Integrated LSP prototype (`zet-compiler --lsp`) with real-time taint analysis and scope diagnostics.
@@ -33,7 +38,7 @@
 
 Network responses, user input, file reads — they're all born as `Untrusted` types. You literally cannot use them without passing through a `validate` block. Not at runtime. **At compile time.** Your binary never ships with an unvalidated input path.
 
-Under the hood, Zet compiles to optimized native code via Rust — no VM, no garbage collector, no interpreter. On Fibonacci(40), it clocks in at **~240ms** — roughly 2× faster than Go, 50× faster than Python.
+Under the hood, Zet compiles through Rust to an optimized native binary — no VM or interpreter is placed between the generated program and the operating system.
 
 ```
 ┌─────────────┐      ┌───────────────────┐      ┌──────────────┐      ┌──────────┐
@@ -94,12 +99,12 @@ This isn't a linter warning. It's not a "best practice." **The compiler won't pr
 
 ## 🚀 Quick Start
 
-> **Requirements:** Windows x64, [Rust toolchain](https://rustup.rs/) installed.
+> **Requirements:** Windows, Linux, or macOS and a [Rust stable toolchain](https://rustup.rs/) on PATH.
 
 ### Option A — Download the installer
-1. Grab the latest release from [Releases](https://github.com/cekYc/zet-lang-source/releases)
-2. Right-click `kurulum.bat` → **Run as Administrator**
-3. Open a new terminal and type `zet`
+1. Download the package for your platform from [Zet Setup Releases](https://github.com/cekYc/zet-setup/releases).
+2. Windows: run `kurulum.bat`. Linux/macOS: run `chmod +x install.sh zet bin/zet-compiler && ./install.sh`.
+3. Open a new terminal and run `zet --version`.
 
 ### Option B — Build from source
 ```bash
@@ -230,21 +235,9 @@ Using `call` on a `det` function is a compile error — pure functions don't nee
 
 ---
 
-## 📊 Benchmarks
+## 📊 Build profile
 
-**Fibonacci(40)** — naive recursive, no memoization:
-
-| Language | Time | Relative |
-|----------|------|----------|
-| **Zet** | **~240ms** | **1.0×** |
-| C (gcc -O2) | ~230ms | ~same |
-| Rust | ~230ms | ~same |
-| Go | ~480ms | 2.0× slower |
-| Java | ~550ms | 2.3× slower |
-| Node.js | ~1.2s | 5× slower |
-| Python | ~12s | 50× slower |
-
-> Compiled with `opt-level=3`, LTO, single codegen unit, `panic=abort`, symbol stripping.
+Release builds use Rust’s optimized native-code pipeline with LTO, a single codegen unit, `panic=abort`, and symbol stripping. Performance numbers are intentionally not published until the benchmark suite is reproducible across supported operating systems.
 
 ---
 
@@ -286,12 +279,12 @@ src/
 - [x] Deterministic / Nondeterministic function enforcement
 - [x] Structured concurrency (`scope` + `spawn` + `JoinHandle`)
 - [x] HTTP client, JSON parsing, console I/O
-- [x] Native performance (Fibonacci-40 in ~240ms)
+- [x] Optimized native Rust codegen
 - [x] Pattern matching
 - [x] Custom struct types
 - [x] Module system & imports
-- [ ] Linux / macOS support
-- [ ] LSP for editor integration
+- [x] Windows, Linux, and macOS packages
+- [x] LSP diagnostics prototype
 - [ ] Package manager
 
 ---

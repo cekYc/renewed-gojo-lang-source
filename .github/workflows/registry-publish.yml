@@ -1,0 +1,82 @@
+name: Approve Zet package publication
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: zet-registry-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: contains(github.event.issue.body, '<!-- zet-publish-v1')
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout trusted registry
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Validate package and update index
+        id: validate
+        continue-on-error: true
+        shell: bash
+        run: |
+          if python3 scripts/registry_publish.py "$GITHUB_EVENT_PATH" > registry-result.txt 2>&1; then
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+          fi
+          cat registry-result.txt
+
+      - name: Commit registry entry
+        if: steps.validate.outputs.status == 'success'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add registry/index.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Register package from issue #${{ github.event.issue.number }}"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+
+      - name: Report accepted publication
+        if: steps.validate.outputs.status == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          {
+            echo "### Zet Registry: kabul edildi"
+            echo
+            cat registry-result.txt
+            echo
+            echo "Paket merkezi indekse eklendi."
+          } > registry-comment.md
+          gh issue comment "${{ github.event.issue.number }}" --body-file registry-comment.md
+          gh issue close "${{ github.event.issue.number }}" --reason completed
+
+      - name: Report rejected publication
+        if: steps.validate.outputs.status != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          {
+            echo "### Zet Registry: reddedildi"
+            echo
+            echo '```text'
+            cat registry-result.txt
+            echo '```'
+          } > registry-comment.md
+          gh issue comment "${{ github.event.issue.number }}" --body-file registry-comment.md
+          gh issue close "${{ github.event.issue.number }}" --reason "not planned"
+          exit 1

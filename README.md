@@ -4,7 +4,7 @@
 
 ### The language that refuses to compile code it doesn't trust.
 
-[![Version](https://img.shields.io/badge/v0.6.0-orange?style=flat-square&label=version)]()
+[![Version](https://img.shields.io/badge/v0.6.5-orange?style=flat-square&label=version)]()
 [![License](https://img.shields.io/badge/CC_BY--NC--SA_4.0-red?style=flat-square&label=license)]()
 [![Written In](https://img.shields.io/badge/Rust-black?style=flat-square&logo=rust)]()
 [![Platform](https://img.shields.io/badge/Windows_%7C_Linux_%7C_macOS-7c3aed?style=flat-square)]()
@@ -17,12 +17,18 @@
 
 ---
 
-### What’s New in v0.6.0?
-- **Git package manager**: `zet add`, `remove`, `install`, and `update` manage project dependencies without a central registry.
-- **Reproducible resolution**: `zet.lock` pins each direct and transitive package to an immutable Git commit and SHA-256 content checksum.
-- **SemVer tags**: Exact versions and ranges resolve against `vX.Y.Z` or `X.Y.Z` repository tags.
-- **Shared cache, local checkout**: Git mirrors are reused globally while each project keeps its resolved sources in `.zet/packages/`.
-- **Package imports**: Package entry points and modules work with the existing `import` syntax.
+### What’s New in v0.6.5?
+- **Central package registry**: Install a registered package by name with `zet add package_name@^1.0`.
+- **Package discovery**: `zet search [query]` searches package names and descriptions in the trusted index.
+- **Publishing workflow**: `zet publish` validates a clean GitHub repository, pushes its SemVer tag, and opens a machine-readable registration request.
+- **Independent approval**: GitHub Actions checks ownership, tag, commit, manifest, safe entry path, symlinks, and the deterministic SHA-256 before updating the registry.
+- **Immutable releases**: A published name remains with its first owner, and an existing version cannot be replaced with different content.
+
+### Package foundation from v0.6
+- `zet add`, `remove`, `install`, and `update` manage direct and transitive dependencies.
+- `zet.lock` pins immutable Git commits and SHA-256 content checksums.
+- Exact versions and ranges resolve against `vX.Y.Z` or `X.Y.Z` Git tags.
+- Shared Git mirrors avoid duplicate downloads; project checkouts stay in `.zet/packages/`.
 
 ### Language features from v0.4
 - **Backend First-Class Features**: Automatic HTTP Routing (`@get`, `@post`), Zero-Trust SQLite DB integration.
@@ -129,19 +135,40 @@ zet build
 ### Add and use a package
 
 ```bash
-zet add owner/repository@^1.0
+zet search math
+zet add package_name@^1.0
 zet install
-zet update repository
-zet remove repository
+zet update package_name
+zet remove package_name
 ```
 
 The dependency name comes from the package repository's `zet.toml`. Import it by that name:
 
 ```zet
-import repository
+import package_name
 ```
 
 Commit `zet.toml` and `zet.lock`; do not commit `.zet/`. See [the package manager guide](DOCS.md#11-v06-git-paket-yöneticisi) for repository requirements, SemVer rules, cache paths, and transitive dependencies.
+
+### Publish a package
+
+Add a short description to the package manifest, commit every package file, and authenticate GitHub CLI once:
+
+```toml
+[package]
+name = "package_name"
+version = "1.0.0"
+description = "A short package description"
+entry = "src/lib.zt"
+```
+
+```bash
+gh auth login
+zet publish --dry-run
+zet publish
+```
+
+`zet publish` accepts personal GitHub repositories in v0.6.5. The GitHub issue author must match the repository owner. `ZET_REGISTRY_TOKEN` can be used instead of an authenticated `gh` session. See [the registry and publish guide](DOCS.md#12-v065-merkezi-kayıt-ve-zet-publish).
 
 ---
 
@@ -272,6 +299,7 @@ src/
 ├── main.rs              # CLI entry & pipeline orchestrator
 ├── project.rs           # zet.toml discovery & isolated .zet workspaces
 ├── package.rs           # Git resolution, SemVer, cache, and zet.lock
+├── registry.rs          # Registry search, name resolution, and publish client
 ├── parser.rs            # Nom-based recursive descent parser
 ├── ast.rs               # AST node definitions
 ├── codegen.rs           # Rust code generation (preamble + per-function)
@@ -299,7 +327,8 @@ src/
 - [x] LSP diagnostics prototype
 - [x] Project manifests and `zet new/run/build` workflow
 - [x] Git package manager with SemVer and reproducible locks
-- [ ] Central package registry and publishing workflow
+- [x] Central package registry and verified `zet publish` workflow
+- [ ] Organization-owned packages and namespace delegation
 
 ---
 

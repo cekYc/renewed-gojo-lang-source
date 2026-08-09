@@ -10,12 +10,14 @@ pub struct ManifestDependency {
     pub name: String,
     pub git: String,
     pub version: String,
+    pub registry: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct ManifestData {
     pub name: String,
     pub version: String,
+    pub description: String,
     pub entry: PathBuf,
     pub dependencies: Vec<ManifestDependency>,
 }
@@ -56,7 +58,7 @@ pub fn create_project(requested_path: &Path) -> Result<Project, String> {
         .map_err(|error| format!("Proje klasoru olusturulamadi: {error}"))?;
 
     let manifest = format!(
-        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nentry = \"{DEFAULT_ENTRY}\"\n\n[dependencies]\n"
+        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\ndescription = \"Zet project {name}\"\nentry = \"{DEFAULT_ENTRY}\"\n\n[dependencies]\n"
     );
     let main_source =
         format!("nondet fn main() -> Void {{\n    println(\"Merhaba, {name}!\")\n}}\n");
@@ -197,7 +199,22 @@ pub fn parse_manifest(content: &str) -> Result<ManifestData, String> {
                 let version = values.get("version").cloned().ok_or_else(|| {
                     format!("zet.toml:{} bagimliliginda version alani eksik.", index + 1)
                 })?;
-                dependencies.push(ManifestDependency { name, git, version });
+                let registry = match values.get("registry").map(String::as_str) {
+                    None => false,
+                    Some("zet") => true,
+                    Some(value) => {
+                        return Err(format!(
+                            "zet.toml:{} bilinmeyen registry degeri: {value}",
+                            index + 1
+                        ));
+                    }
+                };
+                dependencies.push(ManifestDependency {
+                    name,
+                    git,
+                    version,
+                    registry,
+                });
             }
             _ => {}
         }
@@ -230,6 +247,7 @@ pub fn parse_manifest(content: &str) -> Result<ManifestData, String> {
         version: package_values
             .remove("version")
             .unwrap_or_else(|| "0.1.0".to_string()),
+        description: package_values.remove("description").unwrap_or_default(),
         entry,
         dependencies,
     })
@@ -424,10 +442,17 @@ fn section_bounds(lines: &[String], section_name: &str) -> Option<(usize, usize)
 }
 
 fn dependency_line(dependency: &ManifestDependency) -> String {
-    format!(
-        "{} = {{ git = \"{}\", version = \"{}\" }}",
-        dependency.name, dependency.git, dependency.version
-    )
+    if dependency.registry {
+        format!(
+            "{} = {{ git = \"{}\", version = \"{}\", registry = \"zet\" }}",
+            dependency.name, dependency.git, dependency.version
+        )
+    } else {
+        format!(
+            "{} = {{ git = \"{}\", version = \"{}\" }}",
+            dependency.name, dependency.git, dependency.version
+        )
+    }
 }
 
 fn write_manifest_lines(manifest_path: &Path, lines: &[String]) -> Result<(), String> {

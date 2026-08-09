@@ -8,6 +8,7 @@ use semver::{Version, VersionReq};
 use sha2::{Digest, Sha256};
 
 use crate::project::{self, ManifestData, ManifestDependency, Project};
+use crate::registry;
 
 const LOCK_FILE_NAME: &str = "zet.lock";
 const PACKAGE_MARKER: &str = ".zet-package";
@@ -28,6 +29,13 @@ struct SelectedRevision {
     commit: String,
 }
 
+struct PackageSpec {
+    git: String,
+    version: Option<String>,
+    registry: bool,
+    approved: Option<registry::RegistrySelection>,
+}
+
 #[derive(Debug, Clone)]
 pub struct PackageImport {
     pub entry: PathBuf,
@@ -45,33 +53,60 @@ struct Resolver {
 
 pub fn add(project: &Project, specification: &str) -> Result<(), String> {
     let manifest_path = project_manifest_path(project)?;
-    let (git, requested_version) = parse_package_spec(specification)?;
-    let mirror = ensure_mirror(&git, true, None)?;
-    let requirement = requested_version.as_deref().unwrap_or("*");
-    let selected = select_revision(&mirror, requirement)?;
+    let specification = parse_package_spec(specification)?;
+    let requirement = specification.version.as_deref().unwrap_or("*");
+    let (mirror, selected) = if let Some(approved) = &specification.approved {
+        let mirror = ensure_mirror(&specification.git, true, Some(&approved.commit))?;
+        (
+            mirror,
+            SelectedRevision {
+                version: Some(Version::parse(&approved.version).map_err(|error| {
+                    format!("Registry surumu gecersiz ({}): {error}", approved.version)
+                })?),
+                commit: approved.commit.clone(),
+            },
+        )
+    } else {
+        let mirror = ensure_mirror(&specification.git, true, None)?;
+        let selected = select_revision(&mirror, requirement)?;
+        (mirror, selected)
+    };
     let manifest = manifest_at_revision(&mirror, &selected.commit)?;
     project::validate_dependency_name(&manifest.name)?;
     validate_selected_manifest(&manifest, &selected, requirement)?;
+    if let Some(approved) = &specification.approved {
+        if approved.name != manifest.name {
+            return Err(format!(
+                "Registry paket adi '{}' fakat depo '{}' bildiriyor.",
+                approved.name, manifest.name
+            ));
+        }
+    }
 
     let dependency = ManifestDependency {
         name: manifest.name.clone(),
-        git,
+        git: specification.git,
         version: manifest.version.clone(),
+        registry: specification.registry,
     };
-    project::set_dependency(manifest_path, &dependency)?;
-    let refreshed = project::load_project(manifest_path)?;
-    install_with_mode(&refreshed, false, HashSet::from([dependency.name.clone()]))?;
+    with_manifest_rollback(manifest_path, || {
+        project::set_dependency(manifest_path, &dependency)?;
+        let refreshed = project::load_project(manifest_path)?;
+        install_with_mode(&refreshed, false, HashSet::from([dependency.name.clone()]))
+    })?;
     println!("Paket eklendi: {} v{}", dependency.name, dependency.version);
     Ok(())
 }
 
 pub fn remove(project: &Project, name: &str) -> Result<(), String> {
     let manifest_path = project_manifest_path(project)?;
-    if !project::remove_dependency(manifest_path, name)? {
-        return Err(format!("Bagimlilik bulunamadi: {name}"));
-    }
-    let refreshed = project::load_project(manifest_path)?;
-    install_with_mode(&refreshed, false, HashSet::new())?;
+    with_manifest_rollback(manifest_path, || {
+        if !project::remove_dependency(manifest_path, name)? {
+            return Err(format!("Bagimlilik bulunamadi: {name}"));
+        }
+        let refreshed = project::load_project(manifest_path)?;
+        install_with_mode(&refreshed, false, HashSet::new())
+    })?;
     println!("Paket kaldirildi: {name}");
     Ok(())
 }
@@ -96,32 +131,55 @@ pub fn update(project: &Project, target: Option<&str>) -> Result<(), String> {
         None => project.dependencies.clone(),
     };
 
-    let mut force_names = HashSet::new();
-    for dependency in targets {
-        let mirror = ensure_mirror(&dependency.git, true, None)?;
-        let selected = select_revision(&mirror, "*")?;
-        let manifest = manifest_at_revision(&mirror, &selected.commit)?;
-        if manifest.name != dependency.name {
-            return Err(format!(
-                "Paket adi degisti: zet.toml '{}' bekliyor, depo '{}' bildiriyor.",
-                dependency.name, manifest.name
-            ));
+    with_manifest_rollback(manifest_path, || {
+        let mut force_names = HashSet::new();
+        for dependency in targets {
+            let (mirror, selected) = if dependency.registry {
+                let approved = registry::select(&dependency.name, "*")?;
+                if approved.git != dependency.git {
+                    return Err(format!(
+                        "Registry Git deposu uyusmuyor: {} yerine {}",
+                        dependency.git, approved.git
+                    ));
+                }
+                let mirror = ensure_mirror(&dependency.git, true, Some(&approved.commit))?;
+                (
+                    mirror,
+                    SelectedRevision {
+                        version: Some(Version::parse(&approved.version).map_err(|error| {
+                            format!("Registry surumu gecersiz ({}): {error}", approved.version)
+                        })?),
+                        commit: approved.commit,
+                    },
+                )
+            } else {
+                let mirror = ensure_mirror(&dependency.git, true, None)?;
+                let selected = select_revision(&mirror, "*")?;
+                (mirror, selected)
+            };
+            let manifest = manifest_at_revision(&mirror, &selected.commit)?;
+            if manifest.name != dependency.name {
+                return Err(format!(
+                    "Paket adi degisti: zet.toml '{}' bekliyor, depo '{}' bildiriyor.",
+                    dependency.name, manifest.name
+                ));
+            }
+            validate_selected_manifest(&manifest, &selected, "*")?;
+            project::set_dependency(
+                manifest_path,
+                &ManifestDependency {
+                    name: dependency.name.clone(),
+                    git: dependency.git,
+                    version: manifest.version,
+                    registry: dependency.registry,
+                },
+            )?;
+            force_names.insert(dependency.name);
         }
-        validate_selected_manifest(&manifest, &selected, "*")?;
-        project::set_dependency(
-            manifest_path,
-            &ManifestDependency {
-                name: dependency.name.clone(),
-                git: dependency.git,
-                version: manifest.version,
-            },
-        )?;
-        force_names.insert(dependency.name);
-    }
 
-    let refreshed = project::load_project(manifest_path)?;
-    install_with_mode(&refreshed, target.is_none(), force_names)?;
-    Ok(())
+        let refreshed = project::load_project(manifest_path)?;
+        install_with_mode(&refreshed, target.is_none(), force_names)
+    })
 }
 
 pub fn import_map(project: &Project) -> Result<HashMap<String, PackageImport>, String> {
@@ -252,6 +310,25 @@ impl Resolver {
                 },
                 Some(package.checksum.clone()),
             )
+        } else if dependency.registry {
+            let approved = registry::select(&dependency.name, &dependency.version)?;
+            if approved.git != dependency.git {
+                return Err(format!(
+                    "Registry Git deposu uyusmuyor: {} yerine {}",
+                    dependency.git, approved.git
+                ));
+            }
+            let mirror = ensure_mirror(&dependency.git, true, Some(&approved.commit))?;
+            (
+                mirror,
+                SelectedRevision {
+                    version: Some(Version::parse(&approved.version).map_err(|error| {
+                        format!("Registry surumu gecersiz ({}): {error}", approved.version)
+                    })?),
+                    commit: approved.commit,
+                },
+                Some(approved.checksum),
+            )
         } else {
             let mirror = ensure_mirror(&dependency.git, true, None)?;
             let selected = select_revision(&mirror, &dependency.version)?;
@@ -271,15 +348,8 @@ impl Resolver {
             &selected.commit,
             &dependency.name,
             &self.packages_dir,
+            expected_checksum.as_deref(),
         )?;
-        if let Some(expected) = expected_checksum {
-            if checksum != expected {
-                return Err(format!(
-                    "Butunluk hatasi: {} icin kilit {} fakat checkout {}.",
-                    dependency.name, expected, checksum
-                ));
-            }
-        }
 
         self.resolved.insert(
             dependency.name.clone(),
@@ -315,16 +385,27 @@ impl Resolver {
     }
 }
 
-fn parse_package_spec(specification: &str) -> Result<(String, Option<String>), String> {
+fn parse_package_spec(specification: &str) -> Result<PackageSpec, String> {
     let (source, version) = specification
         .rsplit_once('@')
         .map(|(source, version)| (source, Some(version.to_string())))
         .unwrap_or((specification, None));
     if source.is_empty() || version.as_deref() == Some("") {
-        return Err("Paket bicimi: sahip/depo veya sahip/depo@surum".to_string());
+        return Err("Paket bicimi: paket_adi, sahip/depo veya Git URL'si[@surum]".to_string());
     }
     if let Some(version) = &version {
         parse_requirement(version)?;
+    }
+
+    if !source.contains('/') && !source.contains("://") {
+        let requirement = version.as_deref().unwrap_or("*");
+        let approved = registry::select(source, requirement)?;
+        return Ok(PackageSpec {
+            git: approved.git.clone(),
+            version: Some(approved.version.clone()),
+            registry: true,
+            approved: Some(approved),
+        });
     }
 
     let git = if source.contains("://") {
@@ -332,11 +413,16 @@ fn parse_package_spec(specification: &str) -> Result<(String, Option<String>), S
     } else {
         let parts: Vec<&str> = source.split('/').collect();
         if parts.len() != 2 || parts.iter().any(|part| part.is_empty()) {
-            return Err("Paket bicimi: sahip/depo veya sahip/depo@surum".to_string());
+            return Err("Paket bicimi: paket_adi, sahip/depo veya Git URL'si[@surum]".to_string());
         }
         format!("https://github.com/{}/{}.git", parts[0], parts[1])
     };
-    Ok((git, version))
+    Ok(PackageSpec {
+        git,
+        version,
+        registry: false,
+        approved: None,
+    })
 }
 
 fn cache_root() -> Result<PathBuf, String> {
@@ -489,6 +575,7 @@ fn install_checkout(
     commit: &str,
     name: &str,
     packages_dir: &Path,
+    expected_checksum: Option<&str>,
 ) -> Result<String, String> {
     project::validate_dependency_name(name)?;
     let destination = packages_dir.join(name);
@@ -525,6 +612,14 @@ fn install_checkout(
         safe_remove_dir(&git_dir, &staging)?;
     }
     let checksum = hash_package(&staging)?;
+    if let Some(expected) = expected_checksum {
+        if checksum != expected {
+            safe_remove_dir(&staging, packages_dir)?;
+            return Err(format!(
+                "Butunluk hatasi: {name} icin kayit {expected} fakat checkout {checksum}."
+            ));
+        }
+    }
     fs::write(
         staging.join(PACKAGE_MARKER),
         format!("commit={commit}\nchecksum={checksum}\n"),
@@ -723,6 +818,22 @@ fn project_manifest_path(project: &Project) -> Result<&Path, String> {
         .manifest_path
         .as_deref()
         .ok_or_else(|| "Paket komutlari icin zet.toml bulunan bir proje gerekir.".to_string())
+}
+
+fn with_manifest_rollback<T>(
+    manifest_path: &Path,
+    operation: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let original =
+        fs::read(manifest_path).map_err(|error| format!("zet.toml yedegi okunamadi: {error}"))?;
+    match operation() {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            fs::write(manifest_path, original)
+                .map_err(|rollback| format!("{error}\nzet.toml geri alinamadi: {rollback}"))?;
+            Err(error)
+        }
+    }
 }
 
 fn safe_remove_dir(path: &Path, expected_parent: &Path) -> Result<(), String> {

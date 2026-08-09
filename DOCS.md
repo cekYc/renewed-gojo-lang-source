@@ -1,4 +1,4 @@
-# 📘 Zet Lang Resmi Dökümantasyonu (v0.6)
+# 📘 Zet Lang Resmi Dökümantasyonu (v0.6.5)
 
 Zet Lang'e hoş geldiniz. Bu dökümantasyon, dilin sözdizimini (syntax), temel konseptlerini, güvenlik modelini ve standart kütüphanesini içerir.
 
@@ -17,6 +17,7 @@ Zet Lang'e hoş geldiniz. Bu dökümantasyon, dilin sözdizimini (syntax), temel
 9. [v0.4 Yeni Özellikler (Hata Yönetimi ve LSP)](#9-v04-yeni-özellikler-hata-yönetimi-ve-lsp)
 10. [v0.5 Proje Sistemi ve CLI](#10-v05-proje-sistemi-ve-cli)
 11. [v0.6 Git Paket Yöneticisi](#11-v06-git-paket-yöneticisi)
+12. [v0.6.5 Merkezi Kayıt ve zet publish](#12-v065-merkezi-kayıt-ve-zet-publish)
 
 ---
 
@@ -656,6 +657,13 @@ Sürümler `v1.2.0` veya `1.2.0` biçimindeki Git etiketleriyle yayımlanır. Et
 
 ### 11.2 Paket Ekleme
 
+v0.6.5 merkezi kaydındaki paketler doğrudan adlarıyla eklenebilir:
+
+```sh
+zet add ornek_math
+zet add ornek_math@^1.2
+```
+
 GitHub kısaltmasıyla en yeni sürümü eklemek için:
 
 ```sh
@@ -682,6 +690,14 @@ zet add https://git.example.com/ekip/ornek-math.git@1.2.0
 [dependencies]
 ornek_math = { git = "https://github.com/sahip/ornek-math.git", version = "1.2.0" }
 ```
+
+Merkezi kayıt üzerinden ada göre eklenen bağımlılıklarda kaynak ayrıca işaretlenir:
+
+```toml
+ornek_math = { git = "https://github.com/sahip/ornek-math.git", version = "1.2.0", registry = "zet" }
+```
+
+Bu işaret, lock dosyası yeniden üretildiğinde veya paket güncellendiğinde yalnızca registry tarafından onaylanmış sürüm, commit ve checksum kayıtlarının kullanılmasını zorunlu kılar.
 
 ### 11.3 Kurma, Güncelleme ve Kaldırma
 
@@ -746,4 +762,139 @@ nondet fn main() -> Void {
 
 Paket giriş dosyasının yanındaki bir modül `import ornek_math.istatistik` biçiminde içe aktarılabilir. Paketlerin kendi `[dependencies]` bölümleri de çözülür; geçişli paketler aynı import haritasına katılır.
 
-v0.6, Git tabanlı bağımlılık yönetiminin ilk kararlı temelidir. Merkezi paket arama, ad ayırma ve `zet publish` iş akışı ileriki bir sürümün kapsamındadır.
+v0.6, Git tabanlı bağımlılık yönetiminin ilk kararlı temelidir. v0.6.5 merkezi paket keşfi, ad sahipliği ve doğrulanmış yayın akışını bu temel üzerine ekler.
+
+---
+
+## 12. v0.6.5 Merkezi Kayıt ve `zet publish`
+
+Zet Registry, paket adlarını doğrulanmış GitHub depolarına bağlayan merkezi ve kaynak kontrolünde tutulan bir indekstir. Kayıt bir binary arşivi barındırmaz. Kurulum yine paketin Git deposundaki SemVer etiketi, değişmez commit ve SHA-256 bütünlük denetimi üzerinden yapılır.
+
+Bu ayrım sayesinde merkezi indeks paket keşfi ve ad sahipliği sağlar; `zet.lock` ise belirli bir uygulamanın tam olarak hangi içeriği kullandığını sabitler.
+
+### 12.1 Paket Arama
+
+Tüm kayıtları listelemek veya ad/açıklama içinde aramak için:
+
+```sh
+zet search
+zet search json
+```
+
+Arama sonucu paket adı, en yeni sürüm, kısa açıklama, Git deposu ve kayıt sahibini gösterir. Kayıtlı paket ada göre eklenebilir:
+
+```sh
+zet add ornek_json@^1.0
+```
+
+`sahip/depo@surum` ve tam Git URL'si biçimleri geriye dönük uyumlu olarak çalışmaya devam eder. Bir paket merkezi kayıtta bulunmasa bile doğrudan Git deposundan kurulabilir.
+
+### 12.2 Yayımlanabilir Paket Manifesti
+
+Yayımlanacak deponun kökündeki `zet.toml` en az aşağıdaki alanları içermelidir:
+
+```toml
+[package]
+name = "ornek_json"
+version = "1.0.0"
+description = "Zet için küçük bir JSON yardımcı paketi"
+entry = "src/lib.zt"
+
+[dependencies]
+```
+
+- `name`, merkezi kayıtta sahiplenilecek addır ve import kurallarına uymalıdır.
+- `version`, geçerli SemVer olmalıdır.
+- `description`, en fazla 160 yazdırılabilir karakter olabilir.
+- `entry`, depo içinde kalan, Git tarafından izlenen göreli bir dosya olmalıdır.
+- `zet.toml`, entry ve paketin diğer bütün dosyaları yayın öncesinde commit edilmelidir.
+- Çalışma ağacı temiz olmalı ve `zet.toml` Git deposunun kökünde bulunmalıdır.
+- Checkout en fazla 2.000 dosya ve toplam 50 MiB içerik barındırabilir.
+
+v0.6.5 kayıt akışı kişisel GitHub depolarını kabul eder. GitHub issue isteğini açan kullanıcı ile `https://github.com/<kullanıcı>/<depo>` adresindeki depo sahibi aynı olmalıdır. Organizasyon sahipliği ve yetki devri sonraki sürümlere bırakılmıştır.
+
+### 12.3 GitHub Kimlik Doğrulaması
+
+`zet publish`, kayıt isteğini GitHub API üzerinden açar. Önerilen yöntem GitHub CLI ile bir kez oturum açmaktır:
+
+```sh
+gh auth login
+gh auth status
+```
+
+GitHub CLI kullanılmıyorsa token ortam değişkeniyle verilebilir:
+
+```sh
+export ZET_REGISTRY_TOKEN="github_token"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:ZET_REGISTRY_TOKEN = "github_token"
+```
+
+Token yalnızca GitHub'a kayıt issue'su açmak için kullanılır; `zet.lock`, manifest veya registry indeksine yazılmaz. Öncelik sırası `ZET_REGISTRY_TOKEN`, `GITHUB_TOKEN`, ardından `gh auth token` çıktısıdır.
+
+### 12.4 Yayını Önceden Doğrulama
+
+Hiçbir etiket veya ağ yazımı yapmadan kontrolleri çalıştırmak için:
+
+```sh
+zet publish --dry-run
+```
+
+Başarılı dry-run şu bilgileri gösterir:
+
+- Paket adı ve SemVer sürümü
+- Normalize edilmiş GitHub origin URL'si
+- Yayınlanacak HEAD commit'i
+- Kullanılacak `vX.Y.Z` veya mevcut `X.Y.Z` etiketi
+
+Dry-run etiketi oluşturmaz, push yapmaz ve kayıt isteği açmaz.
+
+### 12.5 Paketi Yayımlama
+
+```sh
+zet publish
+```
+
+Komut sırasıyla şu işlemleri yapar:
+
+1. Manifesti, entry dosyasını, Git kökünü ve temiz çalışma ağacını doğrular.
+2. Aynı sürüm etiketi varsa HEAD commit'ini gösterdiğini denetler.
+3. Etiket yoksa açıklamalı `v<version>` etiketi oluşturur.
+4. Etiketi `origin` deposuna push eder.
+5. Merkezi kayıt deposunda makinece okunabilir bir GitHub issue isteği açar.
+
+Etiket başarıyla push edildikten sonra issue oluşturma ağ veya kimlik doğrulama nedeniyle başarısız olursa aynı komut yeniden çalıştırılabilir. Var olan ve doğru commit'i gösteren etiket yeniden kullanılacaktır.
+
+### 12.6 Sunucu Tarafı Onay Denetimleri
+
+Kayıt issue'su açıldığında GitHub Actions güvenilen ana daldaki doğrulayıcıyı çalıştırır. Issue içindeki kod çalıştırılmaz. Doğrulayıcı:
+
+- İstek sahibi ile kişisel GitHub depo sahibini karşılaştırır.
+- Depoyu bağımsız olarak klonlar ve bildirilen commit'i checkout eder.
+- `vX.Y.Z` veya `X.Y.Z` etiketinin aynı commit'i gösterdiğini denetler.
+- `zet.toml` adını, sürümünü, açıklamasını ve güvenli entry yolunu doğrular.
+- Sembolik bağlantıları reddeder.
+- Paket içeriğinin platformdan bağımsız SHA-256 özetini üretir.
+- Dosya sayısı ile toplam checkout boyutu sınırlarını uygular.
+- İlk yayında paket adını GitHub kullanıcısına tahsis eder.
+- Sonraki yayınlarda sahip ve Git deposunun değişmediğini doğrular.
+- Aynı sürümün farklı commit veya checksum ile değiştirilmesini reddeder.
+
+Onaylanan istek `registry/index.json` dosyasına commit edilir ve issue otomatik kapatılır. Bundan sonra paket `zet search` ve ada göre `zet add` ile kullanılabilir. Reddedilen istek hata nedeniyle birlikte issue üzerinde bildirilir.
+
+### 12.7 Özel Kayıt Ayarları
+
+Varsayılan merkezi kayıt Zet Lang kaynak deposundaki indekstir. Uyumlu bir özel kayıt veya yerel geliştirme senaryosu için:
+
+| Ortam değişkeni | Amaç |
+| --- | --- |
+| `ZET_REGISTRY_URL` | Okunacak uyumlu registry JSON adresini değiştirir. |
+| `ZET_REGISTRY_FILE` | Ağ yerine yerel registry JSON dosyası kullanır. |
+| `ZET_REGISTRY_ISSUES_API` | Yayın isteğinin gönderileceği uyumlu GitHub Issues API adresini değiştirir. |
+| `ZET_REGISTRY_TOKEN` | Yayın API kimlik doğrulama token'ını sağlar. |
+
+Registry şema sürümü v0.6.5 için `1` değeridir. Bilinmeyen şema sürümleri, geçersiz paket adları ve Git deposu eksik kayıtlar istemci tarafından reddedilir.

@@ -8,6 +8,7 @@
 /zet-lang/
 /zet-setup/
 /package_smoke/
+__pycache__/
 
 # IDE/editor files
 /.vscode/

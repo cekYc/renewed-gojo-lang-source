@@ -5,6 +5,7 @@ mod lsp;
 mod package;
 mod parser;
 mod project;
+mod registry;
 
 use std::collections::HashMap;
 use std::env;
@@ -138,10 +139,12 @@ fn print_usage() {
     println!("  zet new <ad>              Yeni bir Zet projesi olustur");
     println!("  zet run [dosya.zt]        Projeyi veya dosyayi calistir");
     println!("  zet build [dosya.zt]      Yerel calistirilabilir dosya uret");
-    println!("  zet add <sahip/depo>      Git paketini ekle ve kur");
+    println!("  zet add <paket|depo>       Registry veya Git paketini ekle");
     println!("  zet remove <paket>        Bagimliligi kaldir");
     println!("  zet install               zet.lock paketlerini kur");
     println!("  zet update [paket]        Paketleri guncelle");
+    println!("  zet search [sorgu]        Merkezi kayitta paket ara");
+    println!("  zet publish [--dry-run]   Paketi dogrula ve kayda gonder");
     println!("  zet <dosya.zt> [arg...]   Tek dosyayi derle ve calistir");
     println!("  zet --lsp                 Dil sunucusunu baslat");
     println!("  zet --version             Surum bilgisini goster");
@@ -187,7 +190,39 @@ fn main() {
         "remove" => package_command(&args[2..], PackageCommand::Remove),
         "install" => package_command(&args[2..], PackageCommand::Install),
         "update" => package_command(&args[2..], PackageCommand::Update),
+        "search" => search_command(&args[2..]),
+        "publish" => publish_command(&args[2..]),
         _ => execute(Some(Path::new(&args[1])), BuildMode::Run, &args[2..]),
+    }
+}
+
+fn search_command(args: &[String]) {
+    if args.len() > 1 {
+        eprintln!("Kullanim: zet search [sorgu]");
+        exit(2);
+    }
+    if let Err(error) = registry::search(args.first().map(String::as_str).unwrap_or("")) {
+        eprintln!("[ZET KAYIT HATASI] {error}");
+        exit(1);
+    }
+}
+
+fn publish_command(args: &[String]) {
+    let dry_run = match args {
+        [] => false,
+        [argument] if argument == "--dry-run" => true,
+        _ => {
+            eprintln!("Kullanim: zet publish [--dry-run]");
+            exit(2);
+        }
+    };
+    let project = project::resolve_manifest_project().unwrap_or_else(|error| {
+        eprintln!("[ZET HATA] {error}");
+        exit(1);
+    });
+    if let Err(error) = registry::publish(&project, dry_run) {
+        eprintln!("[ZET YAYIN HATASI] {error}");
+        exit(1);
     }
 }
 
@@ -253,7 +288,7 @@ fn package_command(args: &[String], command: PackageCommand) {
     };
     if !valid {
         let usage = match command {
-            PackageCommand::Add => "zet add <sahip/depo[@surum]>",
+            PackageCommand::Add => "zet add <paket_adi|sahip/depo[@surum]>",
             PackageCommand::Remove => "zet remove <paket>",
             PackageCommand::Install => "zet install",
             PackageCommand::Update => "zet update [paket]",
